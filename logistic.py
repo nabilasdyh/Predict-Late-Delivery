@@ -270,7 +270,7 @@ if not st.session_state.is_loaded:
 # MAIN APP UI
 if st.session_state.mapping_table is None or st.session_state.col_options is None:
     st.title("Aplikasi Logistik Gagal Total")
-        st.error("Aplikasi tidak dapat dilanjutkan. Harap pastikan file aset ('rf_model_pipeline.pkl', 'shipping_mapping_table.pkl' tersedia.")
+    st.error("Aplikasi tidak dapat dilanjutkan. Harap pastikan file aset ('rf_model_pipeline.pkl', 'shipping_mapping_table.pkl' tersedia.")
 
 else:
     # Aset yang berhasil dimuat
