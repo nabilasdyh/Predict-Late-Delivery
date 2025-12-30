@@ -5,7 +5,7 @@
 
 import streamlit as st
 import pandas as pd
-import joblib
+from sklearn.externals import joblib
 import numpy as np
 import warnings
 import time 
