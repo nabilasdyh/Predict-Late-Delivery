@@ -3,12 +3,6 @@
 
 # In[ ]:
 
-
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[2]:
-
 import streamlit as st
 import pandas as pd
 import joblib
@@ -19,13 +13,11 @@ import os
 
 warnings.filterwarnings('ignore')
 
-# Ambil path file model dan ambang batas risiko
 MODEL_PATH = 'best_rf_model.pkl'
 MAPPING_TABLE_PATH = 'shipping_mapping_table.pkl'
-DATA_PATH = 'df_cleaned.csv' 
+DATA_PATH = 'df_clean.csv' 
 RISK_THRESHOLD = 0.50 # Ambang batas risiko: 50% (0.50)
 
-# --- INISIALISASI STATE STREAMLIT ---
 if 'is_loaded' not in st.session_state:
     st.session_state.is_loaded = False
 if 'mapping_table' not in st.session_state:
@@ -35,14 +27,11 @@ if 'ml_model' not in st.session_state:
 if 'col_options' not in st.session_state: 
     st.session_state.col_options = None 
 if 'model_risk' not in st.session_state:
-    st.session_state.model_risk = None # Untuk menyimpan hasil risiko dari model
+    st.session_state.model_risk = None
 
-# --- FUNGSI: MENGEKSTRAK OPSI DARI DATASET (TETAP DINAMIS) ---
 def generate_options_from_data(df):
-    """Menganalisis DataFrame untuk membuat dictionary opsi input yang dinamis."""
     options = {}
     
-    # Kunci untuk fitur Categorical/Text (Selectbox)
     cat_features = [
         'Type', 'Customer Country', 'Customer Segment', 'Department Name',
         'Market', 'Order Country', 'Order Region', 'Shipping Mode', 'Item_Bucket'
@@ -80,7 +69,7 @@ def generate_options_from_data(df):
             
     return options
 
-# --- 1. FUNGSI MEMUAT SEMUA ASET DENGAN CACHING ---
+# FUNGSI MEMUAT SEMUA ASET
 @st.cache_resource(show_spinner=False)
 def load_all_assets():
     """Memuat model, mapping table, dan menghasilkan opsi dinamis."""
@@ -91,7 +80,7 @@ def load_all_assets():
     
     st.markdown("---")
 
-    # --- Muat Mapping Table ---
+    # Muat Mapping Table
     if os.path.exists(MAPPING_TABLE_PATH):
         try:
             mapping_table = joblib.load(MAPPING_TABLE_PATH)
@@ -101,7 +90,7 @@ def load_all_assets():
     else:
         st.error(f"❌ File Tabel Logistik Historis '{MAPPING_TABLE_PATH}' tidak ditemukan.")
 
-    # --- Muat Model Prediksi ---
+    # Muat Model Prediksi
     if os.path.exists(MODEL_PATH):
         try:
             ml_model = joblib.load(MODEL_PATH)
@@ -112,7 +101,7 @@ def load_all_assets():
     else:
         st.error(f"❌ File Model Prediksi '{MODEL_PATH}' tidak ditemukan.")
         
-    # --- Muat Dataset dan Buat Pilihan Dinamis ---
+    # Muat Dataset dan Buat Pilihan Dinamis
     if os.path.exists(DATA_PATH):
         try:
             df = pd.read_csv(DATA_PATH)
@@ -151,13 +140,8 @@ def load_all_assets():
     time.sleep(1)
     st.rerun() 
     
-# --- LOGIKA REKOMENDASI MANUAL (REVISI KONSISTENSI) ---
+# LOGIKA REKOMENDASI MANUAL
 def recommend_from_mapping_table(order_data, mapping_table):
-    """
-    Logika manual untuk menemukan Shipping Mode terbaik, hanya menampilkan 
-    satu rekomendasi terbaik, dan hanya menyarankan beralih jika model
-    memprediksi keterlambatan.
-    """
     
     # Cek risiko model yang sudah dihitung di fungsi utama
     model_risk_proba = st.session_state.model_risk
@@ -193,9 +177,7 @@ def recommend_from_mapping_table(order_data, mapping_table):
     st.markdown("---")
     st.subheader("Rekomendasi Pengiriman")
 
-    # --------------------------------------------------------------------------------
     # KONSISTENSI LOGIKA UTAMA
-    # --------------------------------------------------------------------------------
     
     if current_shipping_mode == reco_mode:
         # KASUS 1: Mode saat ini adalah yang TERBAIK secara historis
@@ -224,16 +206,11 @@ def recommend_from_mapping_table(order_data, mapping_table):
     
 
 
-# --- 2. LOGIKA PREDIKSI / REKOMENDASI UTAMA (MODE PENUH) ---
+# LOGIKA PREDIKSI / REKOMENDASI UTAMA (MODE PENUH)
 
 def get_prediction_and_recommendation(input_df, ml_model, mapping_table):
-    """
-    Memberikan prediksi risiko dan rekomendasi logistik.
-    """
     
-    # ----------------------------------------------------
     # A. LOGIKA UTAMA (PREDIKSI DENGAN MODEL)
-    # ----------------------------------------------------
     st.session_state.model_risk = None
     
     if ml_model is not None:
@@ -270,29 +247,27 @@ def get_prediction_and_recommendation(input_df, ml_model, mapping_table):
             # Jalankan mode fallback jika model error
             recommend_from_mapping_table(input_df, mapping_table)
             
-    # ----------------------------------------------------
     # B. LOGIKA FALLBACK (MODE LOGISTIK MANUAL)
-    # ----------------------------------------------------
     else:
         st.subheader("Hasil Analisis Logistik (Mode Manual)")
         st.warning("⚠️ Prediksi Risiko DITONAKTIFKAN. Aplikasi berjalan dalam Mode Rekomendasi Historis saja.")
         recommend_from_mapping_table(input_df, mapping_table)
 
 
-# --- 3. ANTARMUKA STREAMLIT UTAMA ---
+# ANTARMUKA STREAMLIT UTAMA
 
 st.set_page_config(layout="centered", page_title="Prediksi & Rekomendasi Logistik")
 
 
-# --- INITALIZATION LOGIC (RUNS ONCE) ---
+# INITALIZATION LOGIC
 if not st.session_state.is_loaded:
     st.title("🚛 Memuat Aset Aplikasi...")
     with st.spinner("⏳ Mencoba memuat model prediksi dan data historis..."):
         load_all_assets()
-# --- END INITALIZATION LOGIC ---
+# END INITALIZATION LOGIC
 
 
-# --- MAIN APP UI ---
+# MAIN APP UI
 if st.session_state.mapping_table is None or st.session_state.col_options is None:
     st.title("Aplikasi Logistik Gagal Total")
     st.error("Aplikasi tidak dapat dilanjutkan. Harap pastikan file aset (`best_rf_model.pkl`, `shipping_mapping_table.pkl`, dan `ecommerce_clean_data.csv`) tersedia.")
