@@ -13,9 +13,9 @@ import os
 
 warnings.filterwarnings('ignore')
 
-MODEL_PATH = 'best_rf_model.pkl'
+MODEL_PATH = 'rf_model_pipeline.pkl'
 MAPPING_TABLE_PATH = 'shipping_mapping_table.pkl'
-DATA_PATH = 'df_clean.csv' 
+DATA_PATH = 'df_clean.csv'  
 RISK_THRESHOLD = 0.50 # Ambang batas risiko: 50% (0.50)
 
 if 'is_loaded' not in st.session_state:
@@ -270,7 +270,7 @@ if not st.session_state.is_loaded:
 # MAIN APP UI
 if st.session_state.mapping_table is None or st.session_state.col_options is None:
     st.title("Aplikasi Logistik Gagal Total")
-    st.error("Aplikasi tidak dapat dilanjutkan. Harap pastikan file aset (`best_rf_model.pkl`, `shipping_mapping_table.pkl`, dan `ecommerce_clean_data.csv`) tersedia.")
+        st.error("Aplikasi tidak dapat dilanjutkan. Harap pastikan file aset ('rf_model_pipeline.pkl', 'shipping_mapping_table.pkl' tersedia.")
 
 else:
     # Aset yang berhasil dimuat
