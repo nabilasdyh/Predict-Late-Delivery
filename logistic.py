@@ -27,84 +27,89 @@ if 'ml_model' not in st.session_state:
 if 'col_options' not in st.session_state: 
     st.session_state.col_options = None 
 if 'model_risk' not in st.session_state:
-    st.session_state.model_risk = None # Untuk menyimpan hasil risiko dari model
+    st.session_state.model_risk = None 
+if 'feature_medians' not in st.session_state:
+    st.session_state.feature_medians = {} # TAMBAHAN: Untuk menyimpan nilai normal fitur non-UI
 
-# --- FUNGSI: MENGEKSTRAK OPSI DARI DATASET (Dibatasi 16 Fitur untuk UI) ---
+# --- FUNGSI: MENGEKSTRAK OPSI DARI DATASET ---
 def generate_options_from_data(df):
-    """Menganalisis DataFrame untuk membuat dictionary opsi input yang dinamis (16 fitur)."""
     options = {}
     
-    # Kunci untuk fitur Categorical/Text (Selectbox) - 9 Fitur
+    # Simpan median untuk semua kolom numerik agar prediksi model akurat (tidak nol)
+    medians = df.median(numeric_only=True).to_dict()
+    
     cat_features = [
         'Type', 'Customer Country', 'Customer Segment', 'Department Name',
         'Market', 'Order Country', 'Order Region', 'Shipping Mode', 'Item_Bucket'
     ]
     for col in cat_features:
-        if col in df.columns:
-            unique_values = df[col].astype(str).unique().tolist()
-            if 'Other' in unique_values: unique_values.remove('Other')
-            if 'nan' in unique_values: unique_values.remove('nan')
-            unique_values = sorted(unique_values)
-            if col in ['Type', 'Customer Country', 'Department Name', 'Order Country', 'Order Region']:
-                 unique_values.append('Other')
-            options[col] = unique_values
+        unique_values = df[col].astype(str).unique().tolist()
+        if 'Other' in unique_values: unique_values.remove('Other')
+        if 'nan' in unique_values: unique_values.remove('nan')
+        unique_values = sorted(unique_values)
+        if col in ['Type', 'Customer Country', 'Department Name', 'Order Country', 'Order Region']:
+             unique_values.append('Other')
+        options[col] = unique_values
 
-    # Fitur Boolean/Binary (Checkbox) - 1 Fitur
     options['Is_Weekend'] = [True, False] 
 
-    # Kunci untuk fitur Numerical (Slider) - 6 Fitur
-    # (Hanya menampilkan fitur yang user inginkan di UI)
     num_features = [
-        'Days for shipment (scheduled)', 'Sales per customer',
-        'Order Item Discount Rate', 'Category Id', 'order month', 'order hour'
+        'Days for shipment (scheduled)', 
+        'Order Item Discount Rate', 'order month', 'order hour'
     ]
     for col in num_features:
-        if col in df.columns:
-            min_val = df[col].min()
-            max_val = df[col].max()
-            median_val = df[col].median()
+        min_val = df[col].min()
+        max_val = df[col].max()
+        median_val = df[col].median()
+        
+        if df[col].dtype in (np.int64, np.int32, 'int'):
+            options[col] = (int(min_val), int(max_val), int(median_val))
+        else:
+            options[col] = (float(min_val), float(max_val), float(median_val))
             
-            if df[col].dtype in (np.int64, np.int32, 'int'):
-                options[col] = (int(min_val), int(max_val), int(median_val))
-            else:
-                options[col] = (float(min_val), float(max_val), float(median_val))
-            
-    return options
+    return options, medians
 
-# --- 1. FUNGSI MEMUAT SEMUA ASET DENGAN CACHING ---
+# --- 1. FUNGSI MEMUAT SEMUA ASET ---
 @st.cache_resource(show_spinner=False)
 def load_all_assets():
-    """Memuat model, mapping table, dan menghasilkan opsi dinamis."""
     ml_model = None
     mapping_table = None
     col_options = None
+    medians = {}
     
-    # --- Muat Mapping Table ---
+    st.markdown("---")
+
     if os.path.exists(MAPPING_TABLE_PATH):
         try:
             mapping_table = joblib.load(MAPPING_TABLE_PATH)
-        except: pass
+            st.success("✅ Tabel Logistik Historis berhasil dimuat.")
+        except Exception as e:
+            st.error(f"❌ GAGAL memuat Tabel Logistik Historis: {e}")
 
-    # --- Muat Model Prediksi ---
     if os.path.exists(MODEL_PATH):
         try:
             ml_model = joblib.load(MODEL_PATH)
-        except: pass
+            st.success(f"✅ Model Prediksi Risiko berhasil dimuat.")
+        except Exception as e:
+            st.error(f"❌ GAGAL memuat model: {e}")
         
-    # --- Muat Dataset dan Buat Pilihan Dinamis ---
     if os.path.exists(DATA_PATH):
         try:
             df = pd.read_csv(DATA_PATH)
-            col_options = generate_options_from_data(df)
-        except: pass
+            col_options, medians = generate_options_from_data(df)
+            st.success("✅ Opsi Input (16 Fitur) berhasil diambil.")
+        except Exception as e:
+            st.error(f"❌ GAGAL memproses data: {e}")
 
     st.session_state.mapping_table = mapping_table
     st.session_state.ml_model = ml_model
     st.session_state.col_options = col_options
+    st.session_state.feature_medians = medians
     st.session_state.is_loaded = True
+    time.sleep(1)
     st.rerun() 
-    
-# --- LOGIKA REKOMENDASI MANUAL (REVISI KONSISTENSI) ---
+
+# --- LOGIKA REKOMENDASI MANUAL (DIKEMBALIKAN SESUAI ASLI) ---
 def recommend_from_mapping_table(order_data, mapping_table):
     model_risk_proba = st.session_state.model_risk
     is_risky_by_model = model_risk_proba is not None and model_risk_proba > RISK_THRESHOLD
@@ -134,11 +139,14 @@ def recommend_from_mapping_table(order_data, mapping_table):
     st.subheader("Rekomendasi Pengiriman")
 
     if current_shipping_mode == reco_mode:
-        st.info(f"Mode pengiriman saat ini, **{current_shipping_mode}**, adalah pilihan **terbaik** (Risiko Historis: **{reco_rate:.1%}**).")
+        st.info(f"Mode pengiriman saat ini, **{current_shipping_mode}**, adalah pilihan **terbaik** (Risiko: **{reco_rate:.1%}**).")
     elif is_risky_by_model:
-        st.error(f"Berdasarkan risiko tinggi, disarankan **beralih** ke mode **{reco_mode}** (Risiko Historis: **{reco_rate:.1%}**).")
+        st.error(f"Berdasarkan risiko tinggi, disarankan **beralih** ke mode **{reco_mode}** (Risiko: **{reco_rate:.1%}**).")
     else:
         st.success(f"Mode pengiriman **{current_shipping_mode}** dinilai cukup aman. Alternatif: **{reco_mode}** (**{reco_rate:.1%}**).")
+
+    if current_rate is not None:
+        st.caption(f"*Catatan: Risiko keterlambatan historis untuk {current_shipping_mode} adalah {current_rate:.1%}.*")
 
 # --- 2. LOGIKA PREDIKSI / REKOMENDASI UTAMA ---
 def get_prediction_and_recommendation(input_df, ml_model, mapping_table):
@@ -159,7 +167,8 @@ def get_prediction_and_recommendation(input_df, ml_model, mapping_table):
             
             recommend_from_mapping_table(input_df, mapping_table)
         except Exception as e:
-            st.error(f"⚠️ Error saat menjalankan prediksi model: {e}")
+            st.error(f"⚠️ Error: {e}")
+            recommend_from_mapping_table(input_df, mapping_table)
     else:
         st.subheader("Hasil Analisis Logistik (Mode Manual)")
         recommend_from_mapping_table(input_df, mapping_table)
@@ -168,12 +177,11 @@ def get_prediction_and_recommendation(input_df, ml_model, mapping_table):
 st.set_page_config(layout="centered", page_title="Prediksi & Rekomendasi Logistik")
 
 if not st.session_state.is_loaded:
-    with st.spinner("⏳ Mencoba memuat model prediksi dan data historis..."):
-        load_all_assets()
+    st.title("🚛 Memuat Aset Aplikasi...")
+    load_all_assets()
 
 if st.session_state.mapping_table is None or st.session_state.col_options is None:
-    st.title("Aplikasi Logistik Gagal Dimuat")
-    st.error("Pastikan file aset (`rf_model_pipeline.pkl`, `shipping_mapping_table.pkl`, `df_clean.csv`) tersedia.")
+    st.error("Aplikasi tidak dapat dimuat. Periksa file aset.")
 else:
     mapping_table = st.session_state.mapping_table
     ml_model = st.session_state.ml_model
@@ -184,24 +192,19 @@ else:
     input_data = {}
     st.sidebar.header("Input Data Order (16 Fitur)")
 
-    # Render Sidebar menggunakan 16 fitur
     for col, options in col_options.items():
         if isinstance(options, tuple): 
-            if col in ['Sales per customer', 'Order Item Discount Rate']:
-                input_data[col] = st.sidebar.slider(col, float(options[0]), float(options[1]), float(options[2]), format="%.2f", key=col)
-            else:
-                input_data[col] = st.sidebar.slider(col, options[0], options[1], options[2], key=col)
+            input_data[col] = st.sidebar.slider(col, options[0], options[1], options[2], key=col)
         elif col == 'Is_Weekend': 
             input_data[col] = st.sidebar.checkbox(col, value=options[0], key=col)
         else: 
-            default_idx = options.index('Other') if 'Other' in options else 0
-            input_data[col] = st.sidebar.selectbox(col, options, index=default_idx, key=col)
+            default_index = options.index('Other') if 'Other' in options else 0
+            input_data[col] = st.sidebar.selectbox(col, options, index=default_index, key=col)
 
     if st.sidebar.button("ANALISIS ORDER", use_container_width=True):
         with st.spinner('Menganalisis...'):
-            # --- TAHAP SINKRONISASI (WAJIB 21 KOLOM AGAR TIDAK ERROR) ---
-            # Urutan di bawah ini harus sama persis dengan urutan saat training model
-            ordered_cols_for_model = [
+            # --- TAHAP SINKRONISASI 22 KOLOM (DIPERBAIKI) ---
+            full_model_cols = [
                 'Type', 'Days for shipment (scheduled)', 'Benefit per order',
                 'Customer Country', 'Customer Segment', 'Customer Zipcode',
                 'Department Name', 'Market', 'Order Country', 'Order Item Discount Rate',
@@ -210,15 +213,13 @@ else:
                 'Is_Weekend', 'order month', 'order weekday', 'order hour', 'Item_Bucket'
             ]
             
-            # Gabungkan input dari UI dengan nilai default (0) untuk fitur yang tidak ada di UI
-            final_input_list = []
-            for col in ordered_cols_for_model:
+            final_input = []
+            for col in full_model_cols:
                 if col in input_data:
-                    final_input_list.append(input_data[col])
+                    final_input.append(input_data[col])
                 else:
-                    final_input_list.append(0) # Mengisi fitur yang absen di UI dengan 0
+                    # AMBIL MEDIAN (Bukan 0) agar tidak selalu direkomendasikan Same Day
+                    final_input.append(st.session_state.feature_medians.get(col, 0))
             
-            input_df = pd.DataFrame([final_input_list], columns=ordered_cols_for_model)
-            
-            # Jalankan fungsi prediksi & rekomendasi
+            input_df = pd.DataFrame([final_input], columns=full_model_cols)
             get_prediction_and_recommendation(input_df, ml_model, mapping_table)
